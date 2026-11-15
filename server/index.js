@@ -1,5 +1,6 @@
 import express from 'express';
 import { parseStudySet } from './schema.js';
+import { requestGemini } from './gemini.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -26,11 +27,10 @@ app.post('/api/generate', async (req, res) => {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25000);
+  const timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST',
+    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const response = await requestGemini({ url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
@@ -42,7 +42,9 @@ app.post('/api/generate', async (req, res) => {
     if (!response.ok) {
       // Do not expose provider responses or any secrets to the browser.
       console.error('Gemini response status:', response.status);
-      const message = response.status === 429 ? 'The AI is busy or rate-limited. Please try again shortly.'
+      const message = response.status === 503 ? 'Gemini is temporarily overloaded. We retried automatically; please try again later.'
+        : response.status === 404 ? 'The selected Gemini model is unavailable. Check GEMINI_MODEL in .env.'
+        : response.status === 429 ? 'The AI is busy or rate-limited. Please try again shortly.'
         : response.status === 401 || response.status === 403 ? 'The AI API key was rejected. Check your .env configuration.'
         : 'The AI service is unavailable. Please try again.';
       return res.status(response.status === 429 ? 429 : 502).json({ error: message });
