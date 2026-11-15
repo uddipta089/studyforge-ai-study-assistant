@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseStudySet } from './schema.js';
 import { requestGemini } from './gemini.js';
 
@@ -27,7 +29,7 @@ app.post('/api/generate', async (req, res) => {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(), 25000);
   try {
     const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const response = await requestGemini({ url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
@@ -70,6 +72,17 @@ app.use((err, _req, res, _next) => {
   console.error('Unhandled server error:', err.message);
   res.status(500).json({ error: 'Unexpected server error.' });
 });
+
+// In production, serve the built Vite app from this same Express service.
+// This keeps /api requests on the same origin and the API key server-side.
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'API route not found.' });
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 const port = Number(process.env.PORT || 3001);
 app.listen(port, () => console.log(`StudyForge API running on http://localhost:${port}`));
